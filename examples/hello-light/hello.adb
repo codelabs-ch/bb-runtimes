@@ -32,4 +32,7 @@ with Ada.Text_IO; use Ada.Text_IO;
 procedure Hello is
 begin
    Put_Line ("Hello light world");
+   Put_Line ("Raising exception");
+
+   raise Constraint_Error with "test";
 end Hello;

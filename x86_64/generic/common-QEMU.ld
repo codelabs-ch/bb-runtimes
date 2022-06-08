@@ -41,25 +41,16 @@ INCLUDE memory-map.ld
 
 _DEFAULT_STACK_SIZE = 2*1024*1024;
 
-ENTRY(__processor_entry);
+ENTRY(__start16);
 
 SECTIONS
 {
-
-  /* To simplify testing on QEMU, we don't load the BIOS. This is done so we
-     don't have to create disk images or have to deal with the BIOS output.
-     Instead we load our own code at the processor's boot address. */
-
-  .qemu_boot 0xfffffff0 :
-  {
-    *(.qemu_boot)
-  }
 
   /* The boot code needs to be located in first 64KiB to accommodate the
    * initial 16-bit boot code. We keep the rest of the bootcode here for
    * simplicity. */
 
-  .boot 0x500:
+  .boot 0x0:
   {
     __text_start = .;
     *(.boottext16)

@@ -609,7 +609,7 @@ package System.BB.CPU_Specific is
    --  Exceptions IDs
 
    Divide_Error_Exception         : constant LAPIC_Vector := 0;
-   Dedug_Execption                : constant LAPIC_Vector := 1;
+   Debug_Exception                : constant LAPIC_Vector := 1;
    NMI_Interrupt                  : constant LAPIC_Vector := 2;
    Breakpoint_Execption           : constant LAPIC_Vector := 3;
    Overflow_Exception             : constant LAPIC_Vector := 4;

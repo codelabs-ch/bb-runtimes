@@ -46,6 +46,70 @@ package body System.BB.Board_Support is
    use System.BB.Parameters;
    use System.Machine_Code;
 
+   Scheduling_Info_Size : constant := 2 * 8;
+
+   type Scheduling_Info_Type is record
+      TSC_Schedule_Start : Unsigned_64;
+      TSC_Schedule_End   : Unsigned_64;
+   end record
+   with
+      Size        => Scheduling_Info_Size * 8,
+      Object_Size => Scheduling_Info_Size * 8,
+      Alignment   => 8;
+
+   for Scheduling_Info_Type use record
+      TSC_Schedule_Start at 0 range 0 .. 63;
+      TSC_Schedule_End   at 8 range 0 .. 63;
+   end record;
+
+   --  Subject_Info_Virtual_Addr : constant := 16#000e_0000_0000#;
+   Subject_Info_Virtual_Addr : constant := 16#9000_0000#;
+   Subject_Info_Size         : constant := 16#8000#;
+
+   Sched_Info : Scheduling_Info_Type
+   with
+      Import,
+      Volatile,
+      Async_Writers,
+      Address => System'To_Address
+        (Subject_Info_Virtual_Addr + Subject_Info_Size);
+
+   Event_Bits                 : constant := 6;
+   Padding_Bits               : constant := 64 - Event_Bits;
+   Timed_Event_Interface_Size : constant := 128;
+
+   type Unsigned_6 is mod 2 ** Event_Bits
+   with
+      Size => Event_Bits;
+
+   type Padding_Type is mod 2 ** Padding_Bits
+   with
+      Size => Padding_Bits;
+
+   type Timed_Event_Interface_Type is record
+      TSC_Trigger_Value : Interfaces.Unsigned_64;
+      Event_Nr          : Unsigned_6;
+      Padding           : Padding_Type;
+   end record
+   with
+      Size        => Timed_Event_Interface_Size,
+      Object_Size => Timed_Event_Interface_Size;
+
+   for Timed_Event_Interface_Type use record
+      TSC_Trigger_Value at 0 range 0 .. 63;
+      Event_Nr          at 8 range 0 ..  Event_Bits - 1;
+      Padding           at 8 range Event_Bits .. 63;
+   end record;
+
+   --  Timed_Evt_Addr : constant := 16#000e_0001_0000#;
+   Timed_Evt_Addr : constant := 16#9001_0000#;
+
+   Timed_Evt : Timed_Event_Interface_Type
+   with
+      Import,
+      Volatile,
+      Address => System'To_Address (Timed_Evt_Addr);
+
    ----------------------
    -- Initialize_Board --
    ----------------------
@@ -136,22 +200,7 @@ package body System.BB.Board_Support is
       -- Set_Current_Priority --
       --------------------------
 
-      procedure Set_Current_Priority (Priority : Integer) is
-         Hardware_Priority : Unsigned_64;
-      begin
-         Hardware_Priority :=
-           (if Priority in Interrupt_Priority then
-               Unsigned_64 (Priority - Interrupt_Priority'First + 2)
-            else 0);
-
-         --  Move the hardware priority into the Task Priority Register, CR8
-
-         Asm
-           ("movq %0, %%cr8",
-            Inputs =>
-              Unsigned_64'Asm_Input ("r", Hardware_Priority),
-            Volatile => True);
-      end Set_Current_Priority;
+      procedure Set_Current_Priority (Priority : Integer) is null;
    end Interrupts;
 
    package body Time is
@@ -198,8 +247,8 @@ package body System.BB.Board_Support is
       begin
          --  Read the raw clock and covert it to the Time time base
          return
-           BB.Time.Time ((Read_TSC * Ticks_Per_Millisecond) /
-                          TSC_Frequency_In_kHz);
+           BB.Time.Time ((Sched_Info.TSC_Schedule_End * Ticks_Per_Millisecond)
+                          / TSC_Frequency_In_kHz);
       end Read_Clock;
 
       ---------------
@@ -221,13 +270,8 @@ package body System.BB.Board_Support is
            (Time_To_Alarm * APIC_Frequency_In_kHz) / Ticks_Per_Millisecond;
          --  The requested value of the timer
       begin
-         --  Set the APIC timer to be in the range 1 .. APIC_Time'Last. A
-         --  minimum of 1 ensures the required timer interrupt is raised.
-
-         Local_APIC_Timer_Initial_Count :=
-           (if Timer_Value > Unsigned_64 (APIC_Time'Last) then APIC_Time'Last
-             elsif Timer_Value = 0 then 1
-             else APIC_Time (Timer_Value));
+         Timed_Evt.Event_Nr := 31;
+         Timed_Evt.TSC_Trigger_Value := Timer_Value;
       end Set_Alarm;
    end Time;
 
