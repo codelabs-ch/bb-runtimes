@@ -426,7 +426,7 @@ package body System.BB.CPU_Primitives is
    --  We do not want the compiler creating any prologue or epilogue sequences
    --  for our handler function.
 
-   Spurious_Interrupt_Vector : constant := 32;
+   --  Spurious_Interrupt_Vector : constant := 32;
    --  Vector for the spurious interrupts. Keep in sync with vector_table.S
 
    -----------------------
@@ -546,372 +546,9 @@ package body System.BB.CPU_Primitives is
    --  Volume 3B, Section 18.7.3 for all the magic that happens here.
 
    procedure Determine_Clock_Frequencies  is
-      TSC_Information_Leaf          : constant := 16#15#;
-      Processor_Frequency_Info_Leaf : constant := 16#16#;
-      --  CPUID leaf IDs
-
-      Core_Crystal_Clock_Mhz    : Unsigned_64;
-      TSC_Ratio_Numerator       : Unsigned_64;
-      TSC_Ratio_Denominator     : Unsigned_64;
-      Processor_Base_Frequency  : Unsigned_64;
-      --  Clock information that we query from the CPU
-
    begin
-      pragma Warnings (Off, "*condition is always*");
-
-      if Local_APIC_Frequency /= 0 and then TSC_Frequency /= 0 then
-         APIC_Frequency_In_kHz := Local_APIC_Frequency / 1_000;
-         TSC_Frequency_In_kHz  := TSC_Frequency / 1_000;
-         return;
-      end if;
-
-      if Max_CPUID_Index >= TSC_Information_Leaf then
-         --  Try to see if the TSC Information Leaf 15H has the information we
-         --  need.
-
-         Asm ("cpuid",
-              Inputs   => Unsigned_32'Asm_Input ("a", TSC_Information_Leaf),
-              Outputs  =>
-                (Unsigned_64'Asm_Output ("=a", TSC_Ratio_Denominator),
-                 Unsigned_64'Asm_Output ("=b", TSC_Ratio_Numerator),
-                 Unsigned_64'Asm_Output ("=c", Core_Crystal_Clock_Mhz)),
-              Clobber  => "rdx",
-              Volatile => True);
-
-         --  The easiest case is the processor has enumerated all the TSC ratio
-         --  in CPUID Leaf 15H.
-
-         if TSC_Ratio_Numerator /= 0 and then TSC_Ratio_Denominator /= 0 then
-            --  The processor has enumerated the core crystal clock frequency.
-            --  (only newer processors do this sadly).
-
-            if Core_Crystal_Clock_Mhz /= 0 then
-               APIC_Frequency_In_kHz := Core_Crystal_Clock_Mhz * 1_000;
-               TSC_Frequency_In_kHz :=
-                 APIC_Frequency_In_kHz * TSC_Ratio_Numerator /
-                                         TSC_Ratio_Denominator;
-
-            elsif My_CPU_Model = Denverton then
-               --  The Denverton SoC does not report the crystal clock and
-               --  lacks the CPUID Leaf 16H used to calculate the TSC
-               --  frequency below. A hardcoded 25 MHz crystal clock is used
-               --  instead as that is the clock used in these chips.
-
-               APIC_Frequency_In_kHz := 25 * 1_000;
-               TSC_Frequency_In_kHz :=
-                 APIC_Frequency_In_kHz * TSC_Ratio_Numerator /
-                                         TSC_Ratio_Denominator;
-
-            elsif Max_CPUID_Index >= Processor_Frequency_Info_Leaf then
-               --  When the core crystal clock frequency is not enumerated
-               --  the TSC uses the base frequency reported in CPUID Leaf 16H.
-
-               Asm ("cpuid",
-                    Inputs   =>
-                      Unsigned_32'Asm_Input
-                        ("a", Processor_Frequency_Info_Leaf),
-                    Outputs  =>
-                      Unsigned_64'Asm_Output ("=a", Processor_Base_Frequency),
-                    Clobber => "rbx, rcx, rdx",
-                    Volatile => True);
-
-               TSC_Frequency_In_kHz := Processor_Base_Frequency * 1_000;
-               APIC_Frequency_In_kHz :=
-                 TSC_Frequency_In_kHz * TSC_Ratio_Denominator /
-                                        TSC_Ratio_Numerator;
-            end if;
-         end if;
-
-      --  Sandy Bridge, Ivy Bridge, Haswell and Broadwell microarchitectures
-      --  derive their TSC from the bus frequency. Consequently, the TSC
-      --  calculated here assumes the nominal 100 MHz bus frequency defined
-      --  for these microarchitectures.
-
-      elsif My_CPU_Model in
-        Sandy_Bridge_Client | Sandy_Bridge_Server | Ivy_Bridge_Client   |
-        Ivy_Bridge_Server   | Haswell_Client      | Haswell_Client_L    |
-        Haswell_Client_G    | Haswell_Server      | Broadwell_Client    |
-        Broadwell_Client_G  | Broadwell_Server    | Broadwell_Server_D  |
-        Goldmont
-      then
-         declare
-            Bus_Frequency_kHz : constant := 100_000;
-            Platform_Info : Platform_Infomation;
-         begin
-            Asm ("rdmsr",
-                 Inputs   => Unsigned_32'Asm_Input ("a", MSR_PLATFORM_INFO),
-                 Outputs  =>
-                   Platform_Infomation'Asm_Output ("=a", Platform_Info),
-                 Volatile => True);
-
-            APIC_Frequency_In_kHz := Bus_Frequency_kHz;
-            TSC_Frequency_In_kHz :=
-              Unsigned_64 (Platform_Info.Maximum_Non_Turbo_Ratio)
-              * Bus_Frequency_kHz;
-         end;
-
-      --  If we are on LynxSecure, we can to retrieve the clock frequencies
-      --  from the RO Page provided to us on boot to get the most accurate
-      --  values.
-
-      elsif Host_Hardware = LynxSecure then
-         declare
-            type RO_Page_Type is record
-               TSC_Frequency  : Unsigned_64;
-               APIC_Frequency : Unsigned_64;
-            end record;
-            --  RO Page layout. We are only interested in the clock frequency
-            --  fields of the RO Page, so we leave out everything else.
-
-            for RO_Page_Type use record
-               TSC_Frequency  at 248 range 0 .. 63;
-               APIC_Frequency at 304 range 0 .. 63;
-            end record;
-
-            RO_Page : RO_Page_Type with Import, Address => Host_Info;
-            --  RO Page contains information passed by LynxSecure to the
-            --  subject.
-
-            subtype Valid_APIC_Frequencies is
-              Unsigned_64 range 10_000 .. 5_000_000;
-            subtype Valid_TSC_Frequencies is
-              Unsigned_64 range 500_000 .. 5_000_000;
-            --  Valid range of clock frequencies in kHz.
-
-         begin
-            APIC_Frequency_In_kHz := RO_Page.APIC_Frequency / 1000;
-            TSC_Frequency_In_kHz  := RO_Page.TSC_Frequency / 1000;
-
-            --  Sanity check the values to make sure the RO Page data structure
-            --  hasn't changed and we are reading rubbish. Zero the frequencies
-            --  if that's the case.
-
-            if APIC_Frequency_In_kHz not in Valid_APIC_Frequencies
-              or else TSC_Frequency_In_kHz not in Valid_TSC_Frequencies
-            then
-               APIC_Frequency_In_kHz := 0;
-               TSC_Frequency_In_kHz  := 0;
-            end if;
-         end;
-      end if;
-
-      --  If we got to this point and have not been able to determine the
-      --  clock frequencies, we have to determine the TSC and Local APIC
-      --  Frequency by testing them against the Programmable Interval Timer
-      --  (PIT), which has a known frequency. We perform the test five times
-      --  to ensure we can get consistent results.
-
-      if TSC_Frequency_In_kHz = 0 then
-         declare
-            type Clock_Values is record
-               APIC, TSC : Unsigned_64;
-            end record;
-
-            function Calculate_Frequency return Clock_Values;
-            --  Calculate the frequency of the TSC by comparing the number of
-            --  TSC ticks against a set number of PIT ticks, which has a known
-            --  frequency of 1.193182 MHz.
-
-            -------------------------
-            -- Calculate_Frequency --
-            -------------------------
-
-            function Calculate_Frequency return Clock_Values is
-               PIT_Frequency : constant := 1_193_182;
-               --  PIT operates at 1.193182 MHz
-
-               PIT_Ticks_To_Count : constant := 59_660;
-               --  The number of PIT tickets we want to a we want to count the
-               --  TSC and APIC Timer over. This number corresponds to
-               --  approximately 50ms.
-
-               PIT_Reset_Count : constant Unsigned_16_Bytable :=
-                 (View => Full, Value => Unsigned_16'Last);
-               --  Value to start the PIT from
-
-               APIC_Reset_Count : constant APIC_Time := APIC_Time'Last;
-               --  Value to start the APIC Timer from
-
-               Start_PIT      : Unsigned_16_Bytable;
-               Current_PIT    : Unsigned_16_Bytable;
-               Target_PIT     : Unsigned_16;
-               PIT_Tick_Count : Unsigned_16;
-               --  PIT values used to calculate the frequencies of the TSC and
-               --  APIC Timer.
-
-               End_APIC        : APIC_Time;
-               APIC_Tick_Count : Unsigned_64;
-               --  Start and end value of the TSC run and the resulting number
-               --  of ticks.
-
-               Start_TSC      : Unsigned_64;
-               End_TSC        : Unsigned_64;
-               TSC_Tick_Count : Unsigned_64;
-               --  Start and end value of the TSC run and the resulting number
-               --  of ticks.
-            begin
-               --  Configure Local APIC Timer for the timing run by running it
-               --  at half the clock bus frequency for one shot.
-
-               Local_APIC_Timer_Divide_Configuration := Divide_by_2;
-               Local_APIC_LVT_Timer_Register :=
-                 (Timer_Mode => One_Shot,
-                  Mask       => True,
-                  Delivery   => Idle,
-                  Vector     => APIC_Timer_Vector);
-
-               --  Set PIT reset value
-
-               Write_IO_Byte (PIT_Reset_Count.Low, PIT_Channel_0_Data_Port);
-               Write_IO_Byte (PIT_Reset_Count.High, PIT_Channel_0_Data_Port);
-
-               --  Wait until the PIT clock ticks over so we do not start the
-               --  timing run in the middle of a tick.
-
-               Start_PIT.Low  := Read_IO_Byte (PIT_Channel_0_Data_Port);
-               Start_PIT.High := Read_IO_Byte (PIT_Channel_0_Data_Port);
-
-               loop
-                  Current_PIT.Low  := Read_IO_Byte (PIT_Channel_0_Data_Port);
-                  Current_PIT.High := Read_IO_Byte (PIT_Channel_0_Data_Port);
-
-                  exit when Current_PIT.Value /= Start_PIT.Value;
-               end loop;
-
-               --  Start timing run
-
-               Start_TSC := Read_TSC;
-               Local_APIC_Timer_Initial_Count := APIC_Reset_Count;
-
-               Start_PIT.Value := Current_PIT.Value;
-               Target_PIT      := Start_PIT.Value - PIT_Ticks_To_Count;
-
-               loop
-                  Current_PIT.Low  := Read_IO_Byte (PIT_Channel_0_Data_Port);
-                  Current_PIT.High := Read_IO_Byte (PIT_Channel_0_Data_Port);
-
-                  --  QEMU may jump over PIT values on successive reads, so
-                  --  exit once we have reached or past the target value.
-
-                  exit when Current_PIT.Value <= Target_PIT;
-               end loop;
-
-               End_TSC := Read_TSC;
-               End_APIC := Local_APIC_Timer_Current_Count;
-
-               --  Stop the APIC Timer so it does not create any spurious
-               --  interrupts once we enable interrupts.
-
-               Local_APIC_Timer_Initial_Count := 0;
-
-               --  Calculate clock frequency from the results of the timing run
-
-               APIC_Tick_Count :=
-                 Unsigned_64 (APIC_Reset_Count - End_APIC) * 2;
-               PIT_Tick_Count := Start_PIT.Value - Current_PIT.Value;
-               TSC_Tick_Count := End_TSC - Start_TSC;
-
-               --  We can do the multiplication before the divison below since
-               --  the maximum number of TSC ticks in a second is below the
-               --  value that would cause Unsigned_64 to overflow (modern CPUs
-               --  currently don't go above 5Ghz).
-               return
-                 (APIC => APIC_Tick_Count * PIT_Frequency /
-                            Unsigned_64 (PIT_Tick_Count),
-                  TSC  => TSC_Tick_Count * PIT_Frequency /
-                            Unsigned_64 (PIT_Tick_Count));
-            end Calculate_Frequency;
-
-            PIT_Config : constant PIT_Mode_Command_Register :=
-              (Channel         => Channel_0,
-               Access_Mode     => Low_High_Byte,
-               Operating_Mode  => Interrupt_On_Terminal_Count,
-               BCD_Binary_Mode => Binary);
-            --  PIT configuration settings
-
-            type Clock_Runs is range 1 .. 5;
-            --  Determine the clock frequencies over 5 runs to account for
-            --  variations hardware and virtualized solutions.
-
-            Frequency_Results : array (Clock_Runs) of Clock_Values;
-            --  Array for the results of each clock determining run
-
-            Median_Index : constant := (Frequency_Results'Length + 1) / 2;
-            --  Helper constant to locate the median result in the array
-
-            Acceptable_Clock_Difference : constant := 20;
-            --  The maximum percentage difference between clock runs
-            --  that we find acceptable.
-
-            Max_Frequency_Error : Integer_64;
-            --  The maximum difference between two clock frequency measurement
-            --  we will tolerate.
-
-            TSC_Frequency : Unsigned_64;
-            --  Calculated TSC frequency
-
-         begin
-            --  Configure PIT
-
-            Write_IO_Byte (To_IO_Byte (PIT_Config), PIT_Mode_Command_Port);
-
-            --  Find the TSC and APIC frequency over the number of specified
-            --  runs.
-
-            for Run_Number in Frequency_Results'Range loop
-               Frequency_Results (Run_Number) := Calculate_Frequency;
-            end loop;
-
-            --  Pick the TSC median result. Do this by first sorting the
-            --  results.
-
-            for J in Frequency_Results'First .. Frequency_Results'Last - 1 loop
-               for K in J + 1 .. Frequency_Results'Last loop
-                  declare
-                     Swap_Temp : Clock_Values;
-                  begin
-                     if Frequency_Results (K).TSC < Frequency_Results (J).TSC
-                     then
-                        Swap_Temp := Frequency_Results (J);
-                        Frequency_Results (J) := Frequency_Results (K);
-                        Frequency_Results (K) := Swap_Temp;
-                     end if;
-                  end;
-               end loop;
-            end loop;
-
-            TSC_Frequency := Frequency_Results (Median_Index).TSC;
-
-            Max_Frequency_Error :=
-              Integer_64 (TSC_Frequency / Acceptable_Clock_Difference);
-
-            if abs
-              (Integer_64 (TSC_Frequency) -
-               Integer_64 (Frequency_Results (Median_Index - 1).TSC)) >
-              Max_Frequency_Error
-              or else
-                abs
-                  (Integer_64 (TSC_Frequency) -
-                   Integer_64 (Frequency_Results (Median_Index + 1).TSC)) >
-                Max_Frequency_Error
-            then
-               raise Program_Error with "Clock measurements lack precision";
-            end if;
-
-            APIC_Frequency_In_kHz :=
-              Frequency_Results (Median_Index).APIC / 1_000;
-            TSC_Frequency_In_kHz := TSC_Frequency / 1_000;
-         end;
-      end if;
-
-      --  If the TSC Frequency is stil zero then we were not able to determine
-      --  what the clock frequencies are.
-
-      if TSC_Frequency_In_kHz = 0 then
-         raise Program_Error with "Clock frequencies could not be determined";
-      end if;
-
-      pragma Warnings (On, "*condition is always*");
+      APIC_Frequency_In_kHz := 2162688;
+      TSC_Frequency_In_kHz  := 2162688;
    end Determine_Clock_Frequencies;
 
    ------------------------
@@ -1170,9 +807,9 @@ package body System.BB.CPU_Primitives is
               with "Runtime requires XSAVE processor feature";
          end if;
 
-         if not Features_EDX.APIC then
-            raise Program_Error with "Processor is missing builtin APIC!";
-         end if;
+         --  if not Features_EDX.APIC then
+         --    raise Program_Error with "Processor is missing builtin APIC!";
+         --  end if;
 
          if not Features_EDX.TSC then
             raise Program_Error
@@ -1244,7 +881,7 @@ package body System.BB.CPU_Primitives is
       --  Initialize x87 FPU to defaults, masking floating point exceptions
 
       Asm ("fninit", Volatile => True);
-
+      --
       --  Initialize SSE MXCSR with default 0x1F80
       --  Note: check if we need it to raise divide by zero exceptions.
 
@@ -1294,8 +931,7 @@ package body System.BB.CPU_Primitives is
          Exception_Stack_Pointer : System.Address;
          --  Like the interrupt stack pointer above, but for exceptions.
 
-         My_ID : constant CPU := CPU_Range (Local_APIC_ID_Register.ID) + 1;
-         --  Local APIC IDs start from 0 while type CPU starts from 1
+         My_ID : constant CPU := 1;
 
          My_CPU_Task_State : Task_State_Segment renames CPU_Task_State (My_ID);
 
@@ -1405,11 +1041,11 @@ package body System.BB.CPU_Primitives is
       --  Set the Spurious Interrupt Register, which is required to allow the
       --  CPU to receive interrupts from the APIC.
 
-      Local_APIC_Spurious_Interrupt_Register :=
-        (Spurious_Vector           => Spurious_Interrupt_Vector,
-         APIC_Enabled              => True,
-         Focus_Processor_Checking  => False,
-         Suppress_EOI_Broadcast    => False);
+      --  Local_APIC_Spurious_Interrupt_Register :=
+      --   (Spurious_Vector           => Spurious_Interrupt_Vector,
+      --    APIC_Enabled              => True,
+      --    Focus_Processor_Checking  => False,
+      --    Suppress_EOI_Broadcast    => False);
 
       --  By default all interrupt entries in the Local Vector Table are
       --  masked. Let's assume that is the case for now. In the future it may
@@ -1419,36 +1055,36 @@ package body System.BB.CPU_Primitives is
       --  Determine system clock frequencies
 
       Determine_Clock_Frequencies;
-
+      --
       --  Setup Local APIC Timer
 
       --  Disable warnings for Local_APIC_Timer_Divide_Configuration
 
-      pragma Warnings (Off, "condition is always*");
-
-      Local_APIC_Timer_Divide_Configuration :=
-        (case APIC_Timer_Divider is
-            when 1  => Divide_by_1,  when 2   => Divide_by_2,
-            when 4  => Divide_by_4,  when 8   => Divide_by_8,
-            when 16 => Divide_by_16, when 32  => Divide_by_32,
-            when 64 => Divide_by_64, when 128 => Divide_by_128,
-            when others => raise Program_Error with
-              "Invalid Local APIC Timer Divider value");
-
-      Local_APIC_LVT_Timer_Register :=
-        (Timer_Mode => One_Shot,
-         Mask       => False,
-         Delivery   => Idle,
-         Vector     => APIC_Timer_Vector);
+      --  pragma Warnings (Off, "condition is always*");
+      --
+      --  Local_APIC_Timer_Divide_Configuration :=
+      --   (case APIC_Timer_Divider is
+      --       when 1  => Divide_by_1,  when 2   => Divide_by_2,
+      --       when 4  => Divide_by_4,  when 8   => Divide_by_8,
+      --       when 16 => Divide_by_16, when 32  => Divide_by_32,
+      --       when 64 => Divide_by_64, when 128 => Divide_by_128,
+      --       when others => raise Program_Error with
+      --         "Invalid Local APIC Timer Divider value");
+      --
+      --  Local_APIC_LVT_Timer_Register :=
+      --   (Timer_Mode => One_Shot,
+      --    Mask       => False,
+      --    Delivery   => Idle,
+      --    Vector     => APIC_Timer_Vector);
 
       --  Update APIC_Frequency_In_kHz to reflect the chosen divider
 
-      APIC_Frequency_In_kHz := APIC_Frequency_In_kHz / APIC_Timer_Divider;
-
+      --  APIC_Frequency_In_kHz := APIC_Frequency_In_kHz / APIC_Timer_Divider;
+      --
       --  Clear any pending interrupts that may have occurred before or during
       --  the setup.
-
-      Local_APIC_End_of_Interrupt := Signal;
+      --
+      --  Local_APIC_End_of_Interrupt := Signal;
    end Initialize_CPU;
 
    -----------------------
@@ -1575,7 +1211,7 @@ package body System.BB.CPU_Primitives is
 
       --  Signal to the Local APIC that the interrupt is finished
 
-      Local_APIC_End_of_Interrupt := Signal;
+      --  Local_APIC_End_of_Interrupt := Signal;
 
       --  Interrupt has been handled. Time to clean up and exit, noting that
       --  we may have to switch to another task if the interrupt event has
@@ -2237,7 +1873,7 @@ package body System.BB.CPU_Primitives is
       case ID is
          when Divide_Error_Exception =>
             raise Constraint_Error with "hardware divide by zero exception";
-         when Dedug_Execption =>
+         when Debug_Exception =>
             raise Program_Error with "debug exception";
          when Breakpoint_Execption =>
             raise Program_Error with "breakpoint exception";
