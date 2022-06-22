@@ -1206,6 +1206,9 @@ package body System.BB.CPU_Primitives is
       --  off to a proper Ada procedure.
 
       --  Handle the interrupt at the runtime level
+      --
+      -- HACK HACK HACK: something additional on our stack
+      Asm (Template => "popq %%rsi", Volatile => True);
 
       Interrupt_Wrapper (Vector);
 
