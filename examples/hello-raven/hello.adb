@@ -29,6 +29,7 @@
 
 with Ada.Real_Time; use Ada.Real_Time;
 with Ada.Text_IO; use Ada.Text_IO;
+with System.Machine_Code;
 
 procedure Hello is
    Timeout : Time := Clock;
@@ -38,5 +39,6 @@ begin
       delay until Timeout;
       Timeout := Timeout + Cycle;
       Put_Line ("Hello Ravenscar");
+      System.Machine_Code.Asm (Template => "int $67", Volatile => True);
    end loop;
 end Hello;
