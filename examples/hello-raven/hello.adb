@@ -39,6 +39,6 @@ begin
       delay until Timeout;
       Timeout := Timeout + Cycle;
       Put_Line ("Hello Ravenscar");
-      System.Machine_Code.Asm (Template => "int $67");
+      System.Machine_Code.Asm (Template => "int $67", Volatile => True);
    end loop;
 end Hello;
