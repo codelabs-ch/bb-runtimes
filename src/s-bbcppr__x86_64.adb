@@ -1190,10 +1190,20 @@ package body System.BB.CPU_Primitives is
       --  %edx:%eax. Then XSAVE! We use XSAVEOPT to do this as we only want to
       --  save and restore states that are used and have changed.
 
+      --  XXX: Make efficient see SDM Vol. 1, 13.4.2, initialize xsave header,
+      --  13.7 operation of xsave (if none of these operations cause fault ....)
       Asm
         ("movq      %0,    %%rax"                                        & NL &
          "movq      %%rax, %%rdx"                                        & NL &
          "shrq      $32,   %%rdx"                                        & NL &
+         "movq      $0, 520(%%rsp)"                                      & NL &
+         "movq      $0, 528(%%rsp)"                                      & NL &
+         "movq      $0, 536(%%rsp)"                                      & NL &
+         "movq      $0, 544(%%rsp)"                                      & NL &
+         "movq      $0, 552(%%rsp)"                                      & NL &
+         "movq      $0, 560(%%rsp)"                                      & NL &
+         "movq      $0, 568(%%rsp)"                                      & NL &
+         "movq      $0, 576(%%rsp)"                                      & NL &
          "xsaveopt  8(%%rsp)",
          Inputs   =>
            State_Component_Bit_Map'Asm_Input ("m", BB_X86_Context_State),
