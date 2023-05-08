@@ -540,4 +540,7 @@ begin -- TestBSP
 
    Put_Line (if Errors then "FAILED" else "PASSED");
 
+   while True loop
+      null;
+   end loop;
 end TestBSP;
