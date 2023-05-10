@@ -46,7 +46,7 @@ from riscv import Spike, PolarFireSOC, HiFive1, \
 from visium import Visium
 
 # x86_64
-from x86_64 import X8664Generic
+from x86_64 import X8664Generic, X8664Muen
 
 # native
 from native import X86Native, X8664Native
@@ -221,7 +221,8 @@ def build_configs(target):
     # x86_64
     elif target == 'x86_64':
         t = X8664Generic()
-    # native platforms
+    elif target == 'x86_64-muen':
+        t = X8664Muen()
     elif target in ('x86-linux', 'x86-windows'):
         t = X86Native()
     elif target in ('x86_64-linux', 'x86_64-windows', 'x86_64-windows64'):
