@@ -103,6 +103,7 @@ class X8664Generic(X8664Target):
             'src/s-bbcppr__new.ads',
             'src/s-bbbosu__x86_64.adb',
             'src/s-bbcppr__x86_64.adb',
+            'src/s-bcpicp__x86_64.adb',
             'src/s-bbcpsp__x86_64.adb',
             'src/s-bbcpsp__x86_64.ads',
             'src/s-bbpara__x86_64.ads',
