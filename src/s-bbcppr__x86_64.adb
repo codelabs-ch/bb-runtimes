@@ -2237,7 +2237,7 @@ package body System.BB.CPU_Primitives is
       case ID is
          when Divide_Error_Exception =>
             raise Constraint_Error with "hardware divide by zero exception";
-         when Dedug_Execption =>
+         when Debug_Exception =>
             raise Program_Error with "debug exception";
          when Breakpoint_Execption =>
             raise Program_Error with "breakpoint exception";
