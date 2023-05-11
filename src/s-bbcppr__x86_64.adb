@@ -426,9 +426,6 @@ package body System.BB.CPU_Primitives is
    --  We do not want the compiler creating any prologue or epilogue sequences
    --  for our handler function.
 
-   Spurious_Interrupt_Vector : constant := 32;
-   --  Vector for the spurious interrupts. Keep in sync with vector_table.S
-
    -----------------------
    -- Context Switching --
    -----------------------

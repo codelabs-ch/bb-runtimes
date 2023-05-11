@@ -36,6 +36,8 @@
 
 separate (System.BB.CPU_Primitives)
 procedure Initialize_CPU is
+   Spurious_Interrupt_Vector : constant := 32;
+   --  Vector for the spurious interrupts. Keep in sync with vector_table.S
    Min_Required_CPUID_Index : constant := 16#0D#;
    --  The minimum Intel processor architecture we support is Sandy Bridge
    --  which has a max CPUID Index of DH. This leaf corresponds to the
