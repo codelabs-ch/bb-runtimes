@@ -387,5 +387,5 @@ begin
    --  Clear any pending interrupts that may have occurred before or during
    --  the setup.
 
-   Local_APIC_End_of_Interrupt := Signal;
+   Perform_EOI;
 end Initialize_CPU;

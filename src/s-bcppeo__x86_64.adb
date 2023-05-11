@@ -4,10 +4,10 @@
 --                                                                          --
 --               S Y S T E M . B B . C P U _ P R I M I T I V E S            --
 --                                                                          --
---                                  S p e c                                 --
+--                                  B o d y                                 --
 --                                                                          --
 --        Copyright (C) 1999-2002 Universidad Politecnica de Madrid         --
---             Copyright (C) 2003-2004 The European Space Agency            --
+--             Copyright (C) 2003-2005 The European Space Agency            --
 --                     Copyright (C) 2003-2021, AdaCore                     --
 --                                                                          --
 -- GNAT is free software;  you can  redistribute it  and/or modify it under --
@@ -34,65 +34,8 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
---  This package contains the primitives which are dependent on the
---  underlying processor.
-
-pragma Restrictions (No_Elaboration_Code);
-
-with System.Storage_Elements;
-with System.BB.CPU_Specific;
-
-package System.BB.CPU_Primitives is
-   pragma Preelaborate;
-
-   ------------------------
-   -- Context Management --
-   ------------------------
-
-   subtype Context_Buffer is System.BB.CPU_Specific.Context_Buffer;
-
-   procedure Context_Switch;
-   --  Perform the context switch between the running_thread and the first
-   --  thread. The value of running_thread will be updated.
-
-   procedure Initialize_Stack
-     (Base          : Address;
-      Size          : Storage_Elements.Storage_Offset;
-      Stack_Pointer : out Address);
-   --  Initialize a stack which spans BASE .. BASE + SIZE - 1. Set
-   --  STACK_POINTER to the address to be used by the processor.
-
-   procedure Initialize_Context
-     (Buffer          : not null access Context_Buffer;
-      Program_Counter : System.Address;
-      Argument        : System.Address;
-      Stack_Pointer   : System.Address);
-   pragma Inline (Initialize_Context);
-   --  Initialize_Context initializes the context buffer with the default
-   --  values for each register. The values for program counter, the argument
-   --  to be passed and the stack pointer are provided as parameters.
-
-   ---------------------------------
-   -- Interrupt and Trap Handling --
-   ---------------------------------
-
-   procedure Install_Error_Handlers;
-   --  Called at system initialization time to install a CPU specific trap
-   --  handler, GNAT_Error_Handler, that converts synchronous traps to
-   --  appropriate exceptions.
-
-   procedure Disable_Interrupts;
-   pragma Inline (Disable_Interrupts);
-   --  All external interrupts (asynchronous traps) are disabled
-
-   procedure Enable_Interrupts (Level : Integer);
-   pragma Inline (Enable_Interrupts);
-   --  Interrupts are enabled if they are above the value given by Level
-
-   procedure Initialize_CPU;
-   pragma Inline (Initialize_CPU);
-
-   procedure Perform_EOI;
-   pragma Inline (Perform_EOI);
-
-end System.BB.CPU_Primitives;
+separate (System.BB.CPU_Primitives)
+procedure Perform_EOI is
+begin
+   Local_APIC_End_of_Interrupt := Signal;
+end Perform_EOI;

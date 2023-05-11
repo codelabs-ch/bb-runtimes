@@ -1097,6 +1097,12 @@ package body System.BB.CPU_Primitives is
 
    procedure Initialize_CPU is separate;
 
+   -----------------
+   -- Perform_EOI --
+   -----------------
+
+   procedure Perform_EOI is separate;
+
    -----------------------
    -- Interrupt_Handler --
    -----------------------
@@ -1221,7 +1227,7 @@ package body System.BB.CPU_Primitives is
 
       --  Signal to the Local APIC that the interrupt is finished
 
-      Local_APIC_End_of_Interrupt := Signal;
+      Perform_EOI;
 
       --  Interrupt has been handled. Time to clean up and exit, noting that
       --  we may have to switch to another task if the interrupt event has
