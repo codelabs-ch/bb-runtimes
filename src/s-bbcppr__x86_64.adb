@@ -452,10 +452,12 @@ package body System.BB.CPU_Primitives is
    -- Timer --
    -----------
 
+   pragma Warnings (Off, Reason => "Not referenced by Muen-Variant");
    procedure Determine_Clock_Frequencies;
    --  Attempt to find out what the TSC and APIC Timer frequencies are. An
    --  exception is raised if procedure cannot determine these clock
    --  frequencies.
+   pragma Warnings (On);
 
    -------------------
    -- Miscellaneous --
